@@ -45,4 +45,21 @@ def run_text_checks():
         assert sheet['A1'].font.name == 'Malgun Gothic'
     with zipfile.ZipFile(BytesIO(data)) as archive:
         archive.read('xl/worksheets/sheet1.xml').decode('utf-8',errors='strict')
+    import native_ocr
+    from english_case import vocabulary
+    assert len(vocabulary())==500 and 'eng_case' in pytesseract.get_languages()
+    if os.name=='nt' and getattr(sys,'frozen',False):
+        import ctypes,shutil
+        assert ctypes.windll.kernel32.GetACP()==65001, 'UTF-8 process manifest is not active'
+        old_prefix=os.environ['TESSDATA_PREFIX']
+        with tempfile.TemporaryDirectory(prefix='모델_경로_') as folder:
+            shutil.copy2(Path(old_prefix)/'eng_best.traineddata',Path(folder)/'eng_best.traineddata')
+            os.environ['TESSDATA_PREFIX']=folder
+            try:
+                assert native_ocr.read(np.array(image),'eng_best',6) is not None
+            finally:
+                native_ocr.clear_current_thread()
+                os.environ['TESSDATA_PREFIX']=old_prefix
+        print('PASS: native OCR with Korean model-directory path and UTF-8 process manifest',flush=True)
+    print(f'Native OCR engine: {native_ocr.version()}',flush=True)
     print(f'PASS: UTF-8 text IO, {checked} numeric OCR cases (1/7, two fonts/sizes), Korean XLSX values and filename',flush=True)

@@ -1,6 +1,12 @@
 """Local OCR: ruled table cells first, word alignment otherwise."""
-from io import BytesIO
+from io import BytesIO, StringIO
+from pathlib import Path
 import os
+import hashlib
+import csv
+import threading
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 os.environ.setdefault("OMP_THREAD_LIMIT", "1")
 import cv2
 import numpy as np
@@ -77,12 +83,105 @@ def prepare_cell(crop):
     return cv2.copyMakeBorder(text,12,12,12,12,cv2.BORDER_CONSTANT,value=255)
 
 
+_cell_cache = OrderedDict()
+_cell_cache_lock = threading.Lock()
+_pool = None
+_pool_lock = threading.Lock()
+
+
+def ocr_workers():
+    budget = os.cpu_count() or 1
+    try:
+        quota,period = Path('/sys/fs/cgroup/cpu.max').read_text().split()
+        if quota != 'max':
+            budget = min(budget,max(1,int(quota)//int(period)))
+    except (OSError,ValueError):
+        pass
+    try:
+        requested = int(os.environ.get('TRANSITIONER_OCR_WORKERS','2'))
+    except ValueError:
+        requested = 2
+    return max(1,min(4,budget,requested))
+
+
+def _ordered_ocr(jobs):
+    global _pool
+    if ocr_workers()==1:
+        return [read_cell(*job) for job in jobs]
+    with _pool_lock:
+        if _pool is None:
+            _pool = ThreadPoolExecutor(max_workers=ocr_workers(),thread_name_prefix='ocr')
+    return list(_pool.map(lambda job: read_cell(*job),jobs))
+
+
 def read_cell(crop, lang, psm=6):
     available = set(pytesseract.get_languages())
     cell_lang = '+'.join('eng_best' if part == 'eng' and 'eng_best' in available else part
                          for part in lang.split('+'))
-    return pytesseract.image_to_string(prepare_cell(crop),lang=cell_lang,
-                                      config=f'--psm {psm}',timeout=30).strip()
+    prepared = prepare_cell(crop)
+    backend = os.environ.get('TRANSITIONER_OCR_BACKEND','auto')
+    key = (os.environ.get('TESSDATA_PREFIX'),cell_lang,psm,backend,os.environ.get('TRANSITIONER_CASE_REFINEMENT','on'),prepared.shape,
+           hashlib.blake2b(prepared.tobytes(),digest_size=20).digest())
+    with _cell_cache_lock:
+        if key in _cell_cache:
+            _cell_cache.move_to_end(key)
+            return _cell_cache[key]
+    text = None
+    if backend != 'subprocess':
+        from native_ocr import read,NativeUnavailable
+        try:
+            text,confidence = read(prepared,cell_lang,psm,True)
+            if cell_lang=='eng_best':
+                from english_case import refine
+                text=refine(prepared,text,psm,confidence,available)
+        except NativeUnavailable:
+            if backend=='native':
+                raise
+    if text is None:
+        text = pytesseract.image_to_string(prepared,lang=cell_lang,
+                                          config=f'--psm {psm}',timeout=30).strip()
+    with _cell_cache_lock:
+        _cell_cache[key] = text
+        _cell_cache.move_to_end(key)
+        if len(_cell_cache)>1024:
+            _cell_cache.popitem(last=False)
+    return text
+
+
+def ocr_data(image, lang, timeout=180):
+    if os.environ.get('TRANSITIONER_OCR_BACKEND','auto')!='subprocess':
+        from native_ocr import read,NativeUnavailable
+        try:
+            pixels=np.array(image.convert('RGB')) if isinstance(image,Image.Image) else image
+            tsv=read(pixels,lang,6,output='tsv',timeout=timeout)
+            header='level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n'
+            if not tsv.startswith('level\t'):
+                tsv=header+tsv
+            return pd.read_csv(StringIO(tsv),sep='\t',quoting=csv.QUOTE_NONE,
+                dtype={'text':str},keep_default_na=False)
+        except NativeUnavailable:
+            if os.environ.get('TRANSITIONER_OCR_BACKEND')=='native':
+                raise
+    return pytesseract.image_to_data(image,lang=lang,config='--psm 6',
+        output_type=pytesseract.Output.DATAFRAME,
+        pandas_config={'dtype':{'text':str},'encoding':'utf-8','keep_default_na':False},timeout=timeout)
+
+
+def refine_word_frame(data, pixels):
+    if os.environ.get('TRANSITIONER_CASE_REFINEMENT','on')=='off' or os.environ.get('TRANSITIONER_OCR_BACKEND')=='subprocess':
+        return data
+    available=set(pytesseract.get_languages())
+    if 'eng_case' not in available:
+        return data
+    from english_case import eligible,refine
+    for row in data[(data.conf>=0)&(data.conf<75)].itertuples():
+        if not eligible(row.text):
+            continue
+        top,left=int(row.top),int(row.left)
+        crop=pixels[top:top+int(row.height),left:left+int(row.width)]
+        if crop.size:
+            data.at[row.Index,'text']=refine(prepare_cell(crop),row.text,7,available=available)
+    return data
 
 
 def excel_cell_crop(rgb, ys, xs, r, c, r1, c1):
@@ -113,10 +212,13 @@ def excel_precision_grid(rgb, ys, xs, owners, merges, lang):
     if markers < 3:
         return None
     rows = [['']*nc for _ in range(nr)]
-    for (r,c),(crop,psm) in crops.items():
-        rows[r][c] = read_cell(crop,lang,psm)
+    positions = list(crops)
+    first_pass = _ordered_ocr([(crops[pos][0],lang,crops[pos][1]) for pos in positions])
+    for (r,c),text in zip(positions,first_pass):
+        rows[r][c] = text
     # Route using initial OCR predictions only, never caller labels or expected values.
     available = set(pytesseract.get_languages())
+    reroute = []
     for c in range(nc):
         cells = [rows[r][c] for r in range(1,nr) if (r,c) in crops and rows[r][c]]
         if not cells:
@@ -126,7 +228,9 @@ def excel_precision_grid(rgb, ys, xs, owners, merges, lang):
         for r in range(1,nr):
             if (r,c) in crops:
                 crop,psm = crops[(r,c)]
-                rows[r][c] = read_cell(crop,route,psm)
+                reroute.append(((r,c),(crop,route,psm)))
+    for ((r,c),_),text in zip(reroute,_ordered_ocr([job for _,job in reroute])):
+        rows[r][c] = text
     table = pd.DataFrame(rows)
     table.attrs.update(merges=merges,text_source='local OCR — Excel precision',excel_markers_removed=markers)
     return table
@@ -222,13 +326,13 @@ def recognize(image, lang, text_words=None, excel_precision=True):
                                    for r0,c0,r1,c1 in merges)] + [xs[-1]]
                 chunks = []
                 for left,right in zip(cuts,cuts[1:]):
-                    chunk = pytesseract.image_to_data(clean[top:bottom, left:right], lang=lang,
-                        config='--psm 6', output_type=pytesseract.Output.DATAFRAME,
-                        pandas_config={'dtype': {'text': str}, 'encoding': 'utf-8', 'keep_default_na': False}, timeout=180)
+                    chunk = ocr_data(clean[top:bottom,left:right],lang,180)
                     chunk['left'] += left
                     chunks.append(chunk)
                 words = pd.concat(chunks, ignore_index=True)
             words = words.dropna(subset=['text'])
+            if text_words is None:
+                words=refine_word_frame(words,clean[top:bottom,:])
             for word in words.itertuples():
                 if word.conf < 0:
                     continue
@@ -265,10 +369,10 @@ def recognize(image, lang, text_words=None, excel_precision=True):
         table.attrs['mean_confidence'] = float(np.mean(confidences)) if confidences else 0
         return table, (f"{table.attrs['text_source']} · 격자 {nr}행 × {nc}열 · 병합 {len(merges)}개 · "
                        f'불규칙 영역 {uncertain}개 (수동 검토 필요). 병합 위치를 아래에서 확인하세요.')
-    words = pytesseract.image_to_data(image, lang=lang, config='--psm 6',
-                                     output_type=pytesseract.Output.DATAFRAME, pandas_config={'dtype': {'text': str}, 'encoding': 'utf-8', 'keep_default_na': False}, timeout=60)
+    words = ocr_data(image,lang,60)
     words = words.dropna(subset=['text'])
     words = words[words.conf >= 0]
+    words = refine_word_frame(words,gray)
     if words.empty:
         return pd.DataFrame([['']]), '텍스트를 찾지 못했습니다.'
     # Infer column anchors from large gaps between words on each recognized line.
