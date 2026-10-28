@@ -9,7 +9,7 @@ import pytesseract
 from PIL import Image, ImageOps, ImageSequence
 import pymupdf as fitz
 from openpyxl import Workbook
-from openpyxl.styles import Alignment
+from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
 
 
@@ -38,6 +38,30 @@ def _centers(mask, axis, threshold):
         return []
     groups = np.split(indices, np.where(np.diff(indices) > 1)[0] + 1)
     return [int(np.mean(group)) for group in groups]
+
+
+def prepare_cell(crop):
+    """Enlarge small printed glyphs without modifying recognized characters."""
+    if not crop.size:
+        return crop
+    _, ink = cv2.threshold(crop, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+    points = cv2.findNonZero(ink)
+    if points is None:
+        return cv2.copyMakeBorder(crop,8,8,8,8,cv2.BORDER_CONSTANT,value=255)
+    x,y,w,h = cv2.boundingRect(points)
+    text = crop[y:y+h, x:x+w]
+    if h < 32:
+        scale = min(4, 32/h)
+        text = cv2.resize(text, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    return cv2.copyMakeBorder(text,12,12,12,12,cv2.BORDER_CONSTANT,value=255)
+
+
+def read_cell(crop, lang):
+    available = set(pytesseract.get_languages())
+    cell_lang = '+'.join('eng_best' if part == 'eng' and 'eng_best' in available else part
+                         for part in lang.split('+'))
+    return pytesseract.image_to_string(prepare_cell(crop),lang=cell_lang,
+                                      config='--psm 6',timeout=30).strip()
 
 
 def recognize(image, lang, text_words=None):
@@ -128,7 +152,7 @@ def recognize(image, lang, text_words=None):
                 for left,right in zip(cuts,cuts[1:]):
                     chunk = pytesseract.image_to_data(clean[top:bottom, left:right], lang=lang,
                         config='--psm 6', output_type=pytesseract.Output.DATAFRAME,
-                        pandas_config={'dtype': {'text': str}}, timeout=180)
+                        pandas_config={'dtype': {'text': str}, 'encoding': 'utf-8', 'keep_default_na': False}, timeout=180)
                     chunk['left'] += left
                     chunks.append(chunk)
                 words = pd.concat(chunks, ignore_index=True)
@@ -158,10 +182,10 @@ def recognize(image, lang, text_words=None):
             merge_bounds = {(r0,c0):(r1,c1) for r0,c0,r1,c1 in merges}
             for r,c in sorted(set(owners.values())):
                 r1,c1 = merge_bounds.get((r,c),(r,c))
-                crop = gray[ys[r]+4:ys[r1+1]-3, xs[c]+4:xs[c1+1]-3]
+                margin = max(1, min(3, (ys[r1+1]-ys[r])//12, (xs[c1+1]-xs[c])//12))
+                crop = gray[ys[r]+margin:ys[r1+1]-margin, xs[c]+margin:xs[c1+1]-margin]
                 if crop.size:
-                    crop = cv2.copyMakeBorder(crop,8,8,8,8,cv2.BORDER_CONSTANT,value=255)
-                    rows[r][c] = pytesseract.image_to_string(crop,lang=lang,config='--psm 6',timeout=30).strip()
+                    rows[r][c] = read_cell(crop,lang)
         table = pd.DataFrame(rows)
         table.attrs['text_source'] = 'PDF text layer' if text_words is not None else 'local OCR'
         table.attrs['merges'] = merges
@@ -170,7 +194,7 @@ def recognize(image, lang, text_words=None):
         return table, (f"{table.attrs['text_source']} · 격자 {nr}행 × {nc}열 · 병합 {len(merges)}개 · "
                        f'불규칙 영역 {uncertain}개 (수동 검토 필요). 병합 위치를 아래에서 확인하세요.')
     words = pytesseract.image_to_data(image, lang=lang, config='--psm 6',
-                                     output_type=pytesseract.Output.DATAFRAME, pandas_config={'dtype': {'text': str}}, timeout=60)
+                                     output_type=pytesseract.Output.DATAFRAME, pandas_config={'dtype': {'text': str}, 'encoding': 'utf-8', 'keep_default_na': False}, timeout=60)
     words = words.dropna(subset=['text'])
     words = words[words.conf >= 0]
     if words.empty:
@@ -233,6 +257,7 @@ def workbook(tables):
                 # OCR content is always text, including strings beginning with '='.
                 if cell.__class__.__name__ != 'MergedCell':
                     cell.data_type = 's'
+                cell.font = Font(name='Malgun Gothic')
                 cell.alignment = Alignment(wrap_text=True, vertical='top')
         for column in range(1, len(table.columns)+1):
             sheet.column_dimensions[get_column_letter(column)].width = 24

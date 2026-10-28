@@ -10,7 +10,21 @@ from pathlib import Path
 from multiprocessing import freeze_support
 
 
+def configure_utf8():
+    """Use UTF-8 for child Python processes and Windows console text."""
+    os.environ['PYTHONUTF8'] = '1'
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+    if os.name == 'nt':
+        import ctypes
+        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        ctypes.windll.kernel32.SetConsoleCP(65001)
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8', errors='backslashreplace')
+
+
 def main():
+    configure_utf8()
     root = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
     engine = root / 'tesseract'
     portable = root / 'runtime' / 'Library' / 'bin'
@@ -41,6 +55,8 @@ def main():
         assert table.iat[1,1] == '031'
         assert load_workbook(BytesIO(workbook([table]))).active['B2'].value == '031'
         assert (root/'app.py').exists()
+        from text_checks import run_text_checks
+        run_text_checks()
         print('PASS: bundled Korean OCR and Excel export')
         return
     with socket.socket() as sock:

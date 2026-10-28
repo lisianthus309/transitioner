@@ -6,6 +6,7 @@ from ocr import convert, workbook, validate_merges
 
 st.set_page_config(page_title='Transitioner · OCR to Excel', layout='wide')
 st.title('이미지·PDF → 엑셀')
+st.caption('버전 0.1.1 · 로컬 OCR')
 st.write('로컬 OCR로 표를 읽고, 결과를 수정한 뒤 Excel 파일로 저장하세요.')
 st.caption('파일은 외부 OCR 서비스로 전송하지 않습니다. 인식 결과는 정확성을 보장하지 않으며 검토가 필요합니다.')
 available = set(pytesseract.get_languages())

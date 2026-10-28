@@ -1,4 +1,7 @@
 $ErrorActionPreference = 'Stop'
+$env:PYTHONUTF8 = '1'
+$env:PYTHONIOENCODING = 'utf-8'
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 Set-Location (Join-Path $PSScriptRoot '..')
 if (-not (Test-Path 'C:\Program Files\Tesseract-OCR\tesseract.exe')) {
     throw 'Tesseract 5를 C:\Program Files\Tesseract-OCR에 설치한 뒤 다시 실행하세요.'
@@ -12,7 +15,9 @@ New-Item -ItemType Directory -Force build-runtime\tesseract | Out-Null
 Copy-Item 'C:\Program Files\Tesseract-OCR\*' build-runtime\tesseract -Recurse -Force
 Invoke-WebRequest 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/e12c65a915945e4c28e237a9b52bc4a8f39a0cec/kor.traineddata' -OutFile build-runtime\tesseract\tessdata\kor.traineddata
 if ((Get-FileHash build-runtime\tesseract\tessdata\kor.traineddata -Algorithm SHA256).Hash.ToLower() -ne 'f888d4038348a0c3d25151e7f452bda0d74ca275b18cab146798bcbb94084fff') { throw '한국어 모델 체크섬 불일치' }
-& $python -m PyInstaller --noconfirm --clean --onedir --name Transitioner --collect-all streamlit --collect-all altair --collect-all pydeck --collect-all pytesseract --collect-all pymupdf --hidden-import ocr --add-data 'app.py;.' --add-data 'ocr.py;.' --add-data 'build-runtime\tesseract;tesseract' launcher.py
+Invoke-WebRequest 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/e12c65a915945e4c28e237a9b52bc4a8f39a0cec/eng.traineddata' -OutFile build-runtime\tesseract\tessdata\eng_best.traineddata
+if ((Get-FileHash build-runtime\tesseract\tessdata\eng_best.traineddata -Algorithm SHA256).Hash.ToLower() -ne '8280aed0782fe27257a68ea10fe7ef324ca0f8d85bd2fd145d1c2b560bcb66ba') { throw '영어·숫자 모델 체크섬 불일치' }
+& $python -m PyInstaller --noconfirm --clean --onedir --name Transitioner --python-option 'X utf8' --collect-all streamlit --collect-all altair --collect-all pydeck --collect-all pytesseract --collect-all pymupdf --hidden-import ocr --add-data 'app.py;.' --add-data 'ocr.py;.' --add-data 'build-runtime\tesseract;tesseract' launcher.py
 if ($LASTEXITCODE -ne 0) { throw 'EXE 빌드 실패' }
 # Exercise the bundled engine; a full GUI/OCR acceptance check is still required.
 & dist\Transitioner\_internal\tesseract\tesseract.exe --version
