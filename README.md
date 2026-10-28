@@ -1,6 +1,6 @@
 # Transitioner
 
-**Windows 배포판:** [Transitioner-Windows-x64.zip 다운로드](https://github.com/lisianthus309/transitioner/releases/download/v0.1.0/Transitioner-Windows-x64.zip). 전체 압축을 해제한 뒤 `Transitioner.exe`를 실행하세요.
+**Windows 배포판:** [Transitioner-Windows-x64.zip 다운로드](https://github.com/lisianthus309/transitioner/releases/download/v0.1.1/Transitioner-Windows-x64.zip). 전체 압축을 해제한 뒤 `Transitioner.exe`를 실행하세요.
 
 이미지·PDF의 표를 로컬 OCR로 읽고 검토·수정한 뒤 Excel로 저장하는 Streamlit 앱입니다. 파일을 외부 OCR 서비스로 전송하지 않습니다.
 
@@ -29,7 +29,7 @@ Ubuntu에서 엔진 설치: `sudo apt-get install tesseract-ocr tesseract-ocr-ko
 
 ## Windows 배포판
 
-[공식 릴리스](https://github.com/lisianthus309/transitioner/releases/tag/v0.1.0)에서 ZIP을 받아 전체 압축을 해제한 뒤 `Transitioner/Transitioner.exe`를 더블클릭하세요. Windows 10/11 x64가 대상이며 Python·Tesseract·한국어/영어 인식 데이터를 포함합니다. EXE만 따로 옮기지 마세요.
+[공식 릴리스](https://github.com/lisianthus309/transitioner/releases/tag/v0.1.1)에서 ZIP을 받아 전체 압축을 해제한 뒤 `Transitioner/Transitioner.exe`를 더블클릭하세요. Windows 10/11 x64가 대상이며 Python·Tesseract·한국어/영어 인식 데이터를 포함합니다. EXE만 따로 옮기지 마세요.
 
 실행하면 기본 브라우저에 이 PC의 변환 화면이 열립니다. 종료하려면 실행 콘솔을 닫으세요. 파일을 외부 OCR API로 보내지 않습니다.
 
@@ -59,3 +59,9 @@ export TESSDATA_PREFIX="$PWD/.local/tessdata"
 어떤 품질·배치의 표든 완벽하게 복원한다고 보장하지 않습니다. 기울어진 사진, 끊어진 경계, 중첩/여러 독립 표, 격자선 없는 표, 손글씨, 비사각형 병합은 수동 검토가 필요합니다. 격자선 없는 표는 열 간격 추정만 지원하며 병합을 자동 복원하지 않습니다. HEIC/RAW, 암호화 PDF는 지원하지 않습니다.
 
 OCR 띄어쓰기는 원본과 다를 수 있습니다. 긴 표의 각 페이지는 별도 시트이며 자동 연결하지 않습니다. 격자선 기반 처리에서 표 바깥의 문구는 제외될 수 있습니다. 최대 100,000셀 제한은 리소스 보호 기준이며 검증한 크기는 300행×30열입니다. 다중 사용자 인증이나 운영용 작업 큐는 포함하지 않았습니다.
+
+## v0.1.1 텍스트 처리
+
+Windows EXE의 Python UTF-8 모드, 콘솔 입출력, OCR TSV 파서를 UTF-8로 명시했습니다. Excel의 한글 글꼴과 한글 파일명·문자열 저장도 검증합니다. 작은 한국어 혼합 표의 셀은 확대·여백 보정 및 추가 영어 정밀 모델로 읽고, 대형 표는 기존 모델을 유지합니다.
+
+Windows와 Linux에서 두 글꼴·두 크기의 1/7 관련 숫자 28건, 한글 XLSX 저장을 확인했습니다. 새로 보고된 오인식 원본은 아직 없어 해당 사례가 해결됐는지는 미확인입니다. UTF-8은 문자 인코딩이며 숫자 1을 7로 읽는 OCR 오인식 자체를 보장해서 고치지는 않습니다. 원본과 변환 값을 검토하세요.
