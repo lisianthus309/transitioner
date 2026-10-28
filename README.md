@@ -1,6 +1,6 @@
 # Transitioner
 
-**Windows 배포판:** [Transitioner-Windows-x64.zip 다운로드](https://github.com/lisianthus309/transitioner/releases/download/v0.1.2/Transitioner-Windows-x64.zip). 전체 압축을 해제한 뒤 `Transitioner.exe`를 실행하세요.
+**Windows 배포판:** [Transitioner-Windows-x64.zip 다운로드](https://github.com/lisianthus309/transitioner/releases/download/v0.1.3/Transitioner-Windows-x64.zip). 전체 압축을 해제한 뒤 `Transitioner.exe`를 실행하세요.
 
 이미지·PDF의 표를 로컬 OCR로 읽고 검토·수정한 뒤 Excel로 저장하는 Streamlit 앱입니다. 파일을 외부 OCR 서비스로 전송하지 않습니다.
 
@@ -29,7 +29,7 @@ Ubuntu에서 엔진 설치: `sudo apt-get install tesseract-ocr tesseract-ocr-ko
 
 ## Windows 배포판
 
-[공식 릴리스](https://github.com/lisianthus309/transitioner/releases/tag/v0.1.2)에서 ZIP을 받아 전체 압축을 해제한 뒤 `Transitioner/Transitioner.exe`를 더블클릭하세요. Windows 10/11 x64가 대상이며 Python·Tesseract·한국어/영어 인식 데이터를 포함합니다. EXE만 따로 옮기지 마세요.
+[공식 릴리스](https://github.com/lisianthus309/transitioner/releases/tag/v0.1.3)에서 ZIP을 받아 전체 압축을 해제한 뒤 `Transitioner/Transitioner.exe`를 더블클릭하세요. Windows 10/11 x64가 대상이며 Python·Tesseract·한국어/영어 인식 데이터를 포함합니다. EXE만 따로 옮기지 마세요.
 
 실행하면 기본 브라우저에 이 PC의 변환 화면이 열립니다. 종료하려면 실행 콘솔을 닫으세요. 파일을 외부 OCR API로 보내지 않습니다.
 
