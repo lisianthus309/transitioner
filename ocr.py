@@ -13,6 +13,23 @@ from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
 
 
+def original_scan(page, doc):
+    images = page.get_images()
+    if len(images)!=1 or page.rotation or page.get_text().strip() or page.get_drawings() or page.first_annot:
+        return None
+    placements = page.get_image_rects(images[0][0],transform=True)
+    if len(placements)!=1:
+        return None
+    rect,matrix = placements[0]
+    if matrix.b or matrix.c or matrix.a <= 0 or matrix.d <= 0 or not page.rect.contains(rect):
+        return None
+    payload = doc.extract_image(images[0][0])
+    if payload['width']*payload['height'] > 65_000_000:
+        return None
+    with Image.open(BytesIO(payload['image'])) as image:
+        return image.convert('RGB')
+
+
 def pages(data, name):
     if data.startswith(b'%PDF'):
         with fitz.open(stream=data, filetype='pdf') as doc:
@@ -21,6 +38,10 @@ def pages(data, name):
             if len(doc) > 50:
                 raise ValueError('PDF는 한 번에 50페이지까지 지원합니다.')
             for page in doc:
+                native = original_scan(page,doc)
+                if native is not None:
+                    yield native
+                    continue
                 scale = 3 if page.rect.width * page.rect.height * 9 <= 65_000_000 else 2
                 pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
                 yield Image.frombytes('RGB', (pix.width, pix.height), pix.samples)
@@ -56,15 +77,62 @@ def prepare_cell(crop):
     return cv2.copyMakeBorder(text,12,12,12,12,cv2.BORDER_CONSTANT,value=255)
 
 
-def read_cell(crop, lang):
+def read_cell(crop, lang, psm=6):
     available = set(pytesseract.get_languages())
     cell_lang = '+'.join('eng_best' if part == 'eng' and 'eng_best' in available else part
                          for part in lang.split('+'))
     return pytesseract.image_to_string(prepare_cell(crop),lang=cell_lang,
-                                      config='--psm 6',timeout=30).strip()
+                                      config=f'--psm {psm}',timeout=30).strip()
 
 
-def recognize(image, lang, text_words=None):
+def excel_cell_crop(rgb, ys, xs, r, c, r1, c1):
+    crop = rgb[ys[r]+2:ys[r1+1]-2, xs[c]+2:xs[c1+1]-2].copy()
+    if not crop.size:
+        return np.full((10,10),255,np.uint8), False
+    channels = crop.astype(np.int16)
+    green = (channels[:,:,1] > channels[:,:,0]+18) & (channels[:,:,1] > channels[:,:,2]+10)
+    green[12:,:] = False
+    green[:,14:] = False
+    marker = np.count_nonzero(green) >= 3
+    gray = cv2.cvtColor(crop,cv2.COLOR_RGB2GRAY)
+    if marker:
+        mask = cv2.dilate(green.astype('uint8'),np.ones((3,3),np.uint8))
+        gray[mask>0] = 255
+    return gray, marker
+
+
+def excel_precision_grid(rgb, ys, xs, owners, merges, lang):
+    nr,nc = len(ys)-1,len(xs)-1
+    bounds = {(r,c):(r1,c1) for r,c,r1,c1 in merges}
+    crops = {};markers = 0
+    for r,c in sorted(set(owners.values())):
+        r1,c1 = bounds.get((r,c),(r,c))
+        crop,marker = excel_cell_crop(rgb,ys,xs,r,c,r1,c1)
+        crops[(r,c)] = (crop,6 if ys[r1+1]-ys[r] > np.median(np.diff(ys))*1.5 else 7)
+        markers += marker
+    if markers < 3:
+        return None
+    rows = [['']*nc for _ in range(nr)]
+    for (r,c),(crop,psm) in crops.items():
+        rows[r][c] = read_cell(crop,lang,psm)
+    # Route using initial OCR predictions only, never caller labels or expected values.
+    available = set(pytesseract.get_languages())
+    for c in range(nc):
+        cells = [rows[r][c] for r in range(1,nr) if (r,c) in crops and rows[r][c]]
+        if not cells:
+            continue
+        hangul = sum(any('\uac00'<=ch<='\ud7a3' for ch in text) for text in cells)/len(cells)
+        route = 'kor' if hangul >= .2 and 'kor' in available else ('eng_best' if 'eng_best' in available else 'eng')
+        for r in range(1,nr):
+            if (r,c) in crops:
+                crop,psm = crops[(r,c)]
+                rows[r][c] = read_cell(crop,route,psm)
+    table = pd.DataFrame(rows)
+    table.attrs.update(merges=merges,text_source='local OCR — Excel precision',excel_markers_removed=markers)
+    return table
+
+
+def recognize(image, lang, text_words=None, excel_precision=True):
     gray = cv2.cvtColor(np.array(image.convert('RGB')), cv2.COLOR_RGB2GRAY)
     binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                    cv2.THRESH_BINARY_INV, 31, 15)
@@ -116,6 +184,10 @@ def recognize(image, lang, text_words=None):
                 uncertain += 1
                 for cell in cells:
                     owners[cell] = cell
+        if excel_precision and text_words is None and nr*nc <= 2000:
+            precise = excel_precision_grid(np.array(image.convert('RGB')),ys,xs,owners,merges,lang)
+            if precise is not None:
+                return precise, f'엑셀 화면 표 정밀 인식 · {nr}행 × {nc}열 · 셀 표시 {precise.attrs["excel_markers_removed"]}개 보정. 원본과 대조해 주세요.'
         # Remove rules and OCR strips, rather than spawning 9,000 OCR processes.
         clean = gray.copy()
         rules = np.zeros_like(binary)
@@ -266,11 +338,11 @@ def workbook(tables):
     return output.getvalue()
 
 
-def convert(data, name, lang, force_ocr=False):
+def convert(data, name, lang, force_ocr=False, excel_precision=True):
     """Prefer embedded digital text when present; scanned PDFs use local OCR."""
     if not data.startswith(b'%PDF') or force_ocr:
         for image in pages(data, name):
-            yield recognize(image, lang)
+            yield recognize(image, lang, excel_precision=excel_precision)
         return
     with fitz.open(stream=data, filetype='pdf') as doc:
         if doc.needs_pass or len(doc) > 50:
@@ -283,7 +355,11 @@ def convert(data, name, lang, force_ocr=False):
                           height=(y1-y0)*sy, text=text, conf=100)
                      for x0,y0,x1,y1,text,*_ in page.get_text('words')]
             if not words:
+                native = original_scan(page,doc)
+                if native is not None:
+                    yield recognize(native,lang,excel_precision=excel_precision)
+                    continue
                 scale = 3 if page.rect.width * page.rect.height * 9 <= 65_000_000 else 2
                 pix = page.get_pixmap(matrix=fitz.Matrix(scale,scale),alpha=False)
                 image = Image.frombytes('RGB',(pix.width,pix.height),pix.samples)
-            yield recognize(image, lang, words if words else None)
+            yield recognize(image, lang, words if words else None, excel_precision=excel_precision)

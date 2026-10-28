@@ -5,7 +5,7 @@ on:
       release_tag:
         description: Version tag for the prepared draft release
         type: string
-        default: v0.1.1
+        default: v0.1.2
       publish_release:
         description: Publish the release after Windows checks pass
         type: boolean

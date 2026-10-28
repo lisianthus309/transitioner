@@ -6,7 +6,7 @@ from ocr import convert, workbook, validate_merges
 
 st.set_page_config(page_title='Transitioner · OCR to Excel', layout='wide')
 st.title('이미지·PDF → 엑셀')
-st.caption('버전 0.1.1 · 로컬 OCR')
+st.caption('버전 0.1.2 · 로컬 OCR')
 st.write('로컬 OCR로 표를 읽고, 결과를 수정한 뒤 Excel 파일로 저장하세요.')
 st.caption('파일은 외부 OCR 서비스로 전송하지 않습니다. 인식 결과는 정확성을 보장하지 않으며 검토가 필요합니다.')
 available = set(pytesseract.get_languages())
@@ -18,11 +18,14 @@ if 'kor' not in available:
 uploads = st.file_uploader('이미지·PDF 여러 개 선택 (파일당 최대 100MB)', accept_multiple_files=True, type=['pdf','png','jpg','jpeg','tif','tiff','bmp','webp','gif'])
 st.caption('지원 형식: PDF, PNG, JPEG, TIFF, BMP, WebP, GIF. HEIC·RAW 및 손상되거나 암호화된 파일은 지원하지 않습니다.')
 force_ocr = st.checkbox('PDF 내장 텍스트 대신 OCR로 강제 인식', value=False)
+excel_precision = st.checkbox('엑셀 화면의 셀 표시 자동 보정 (정밀 처리 시 느릴 수 있음)',value=True)
 if uploads:
     digest = hashlib.sha256(lang.encode() + str(force_ocr).encode())
     for upload in uploads:
         digest.update(upload.name.encode())
         digest.update(hashlib.sha256(upload.getvalue()).digest())
+    if not excel_precision:
+        digest.update(b'disable-excel-precision')
     identity = digest.hexdigest()
     if st.session_state.get('identity') != identity:
         st.session_state.pop('results', None)
@@ -42,7 +45,7 @@ if uploads:
                         raise ValueError('파일당 100MB 이하로 선택하세요.')
                     with st.spinner(f'{upload.name} 분석 중…'):
                         file_results = []
-                        for page_index, (table,note) in enumerate(convert(upload.getvalue(), upload.name, lang, force_ocr),1):
+                        for page_index, (table,note) in enumerate(convert(upload.getvalue(), upload.name, lang, force_ocr, excel_precision),1):
                             if len(results)+len(file_results) >= 100:
                                 raise ValueError('일괄 처리 결과는 최대 100페이지입니다. 파일을 나눠 처리하세요.')
                             table.attrs['source_name'] = f'{upload.name}_p{page_index}'
