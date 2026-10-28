@@ -7,3 +7,10 @@ build-runtime/
 build/
 dist/
 *.spec
+
+# Local credentials and user-provided documents
+.env
+.env.*
+.secrets/
+attachments/
+*.log

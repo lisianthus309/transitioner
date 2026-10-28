@@ -1,5 +1,7 @@
 # Transitioner
 
+**Windows 배포판:** [Transitioner-Windows-x64.zip 다운로드](https://github.com/lisianthus309/transitioner/releases/download/v0.1.0/Transitioner-Windows-x64.zip). 전체 압축을 해제한 뒤 `Transitioner.exe`를 실행하세요.
+
 이미지·PDF의 표를 로컬 OCR로 읽고 검토·수정한 뒤 Excel로 저장하는 Streamlit 앱입니다. 파일을 외부 OCR 서비스로 전송하지 않습니다.
 
 ## 현재 기능
@@ -27,13 +29,15 @@ Ubuntu에서 엔진 설치: `sudo apt-get install tesseract-ocr tesseract-ocr-ko
 
 ## Windows 배포판
 
-`Transitioner-Windows-x64.zip`은 실제 Windows GUI 실행기 `Transitioner.exe`와 Windows용 Python·OCR 엔진·언어 데이터를 포함합니다. ZIP 전체를 압축 해제한 뒤 폴더 안의 EXE를 더블클릭합니다. 별도 Python 설치 없이 실행하도록 구성했습니다. 실행 창을 닫으면 변환 서버와 OCR 프로세스도 종료합니다. Windows 10/11 x64가 대상입니다.
+[공식 릴리스](https://github.com/lisianthus309/transitioner/releases/tag/v0.1.0)에서 ZIP을 받아 전체 압축을 해제한 뒤 `Transitioner/Transitioner.exe`를 더블클릭하세요. Windows 10/11 x64가 대상이며 Python·Tesseract·한국어/영어 인식 데이터를 포함합니다. EXE만 따로 옮기지 마세요.
 
-Linux에서 Windows PE 실행기를 크로스 컴파일하고 Windows 전용 패키지와 DLL 구성을 검증했습니다. 실제 Windows에서의 실행 검증은 아직 수행하지 않았습니다. 브라우저를 통해 이 PC의 로컬 변환 화면을 사용하며 파일을 외부 OCR API로 보내지 않습니다.
+실행하면 기본 브라우저에 이 PC의 변환 화면이 열립니다. 종료하려면 실행 콘솔을 닫으세요. 파일을 외부 OCR API로 보내지 않습니다.
 
-실행기의 원본은 `packaging/windows-launcher.c`, DLL 초기화 코드는 `packaging/portable_bootstrap.py`입니다. `packaging/verify_portable.py`는 PE 아키텍처, GUI 실행 형식, DLL 포함 여부와 한국어 모델 체크섬을 검사합니다. 실제 Windows 실행 테스트를 대신하지 않습니다.
+GitHub Windows 실행기에서 PyInstaller 빌드, 번들 한국어 OCR, 숫자의 선행 0 보존 및 Excel 저장 자체검사가 통과했습니다. 사용자 PC에서의 GUI 수동 검증은 별도입니다. 릴리스 ZIP을 로그인 없는 요청으로 다운로드하여 HTTP 200, SHA256과 ZIP 무결성을 확인했습니다.
 
-다른 Windows 빌드 방식으로는 Python 3.12와 Tesseract 5를 설치한 뒤 `packaging/build-windows.ps1`을 실행하는 기존 PyInstaller 경로도 있습니다. 수동 GitHub Actions 구성은 `.github/workflows/windows-build.yml`에 있습니다.
+Windows 빌드는 `packaging/build-windows.ps1`, 자동 빌드·배포는 `.github/workflows/windows-build.yml`에 있습니다. 워크플로는 검사 성공 후 GitHub가 자동 발급하는 임시 토큰으로 릴리스에 업로드합니다. 개인 토큰이나 원본 첨부 PDF는 코드·배포판에 포함하지 않습니다.
+
+별도로 Linux에서 조립한 네이티브 GUI 실행기 소스는 `packaging/windows-launcher.c`와 `packaging/portable_bootstrap.py`에 있습니다. 현재 공식 릴리스는 위 Windows PyInstaller 빌드 경로를 사용합니다.
 
 ## 검증
 
