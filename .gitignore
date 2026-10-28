@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.streamlit/
+.local/
+.build-venv/
+build-runtime/
+build/
+dist/
+*.spec

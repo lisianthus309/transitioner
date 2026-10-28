@@ -1,0 +1,59 @@
+name: Build Windows app
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish the release after Windows checks pass
+        type: boolean
+        default: false
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install OCR engine
+        shell: pwsh
+        run: |
+          choco install tesseract --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Tesseract installation failed' }
+      - name: Build application and check bundled Korean OCR and Excel export
+        shell: pwsh
+        run: ./packaging/build-windows.ps1
+      - name: Prepare release assets
+        shell: pwsh
+        run: |
+          Copy-Item dist/Transitioner-Windows.zip dist/Transitioner-Windows-x64.zip
+          $hash = (Get-FileHash dist/Transitioner-Windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  Transitioner-Windows-x64.zip" | Set-Content dist/Transitioner-Windows-x64.zip.sha256 -Encoding utf8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Transitioner-Windows
+          path: |
+            dist/Transitioner-Windows-x64.zip
+            dist/Transitioner-Windows-x64.zip.sha256
+          if-no-files-found: error
+      - name: Upload to draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v0.1.0 --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw 'Expected draft release not found' }
+          gh release upload v0.1.0 dist/Transitioner-Windows-x64.zip dist/Transitioner-Windows-x64.zip.sha256 --clobber --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw 'Release asset upload failed' }
+      - name: Publish verified release
+        if: inputs.publish_release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit v0.1.0 --draft=false --target $env:GITHUB_SHA --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
