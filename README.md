@@ -1,6 +1,6 @@
 # Transitioner
 
-**Windows 배포판:** [Transitioner-Windows-x64.zip 다운로드](https://github.com/lisianthus309/transitioner/releases/download/v0.1.3/Transitioner-Windows-x64.zip). 전체 압축을 해제한 뒤 `Transitioner.exe`를 실행하세요.
+**Windows 배포판:** [Transitioner-Windows-x64.zip 다운로드](https://github.com/lisianthus309/transitioner/releases/download/v0.1.4/Transitioner-Windows-x64.zip). 전체 압축을 해제한 뒤 `Transitioner.exe`를 실행하세요.
 
 이미지·PDF의 표를 로컬 OCR로 읽고 검토·수정한 뒤 Excel로 저장하는 Streamlit 앱입니다. 파일을 외부 OCR 서비스로 전송하지 않습니다.
 
@@ -29,7 +29,7 @@ Ubuntu에서 엔진 설치: `sudo apt-get install tesseract-ocr tesseract-ocr-ko
 
 ## Windows 배포판
 
-[공식 릴리스](https://github.com/lisianthus309/transitioner/releases/tag/v0.1.3)에서 ZIP을 받아 전체 압축을 해제한 뒤 `Transitioner/Transitioner.exe`를 더블클릭하세요. Windows 10/11 x64가 대상이며 Python·Tesseract·한국어/영어 인식 데이터를 포함합니다. EXE만 따로 옮기지 마세요.
+[공식 릴리스](https://github.com/lisianthus309/transitioner/releases/tag/v0.1.4)에서 ZIP을 받아 전체 압축을 해제한 뒤 `Transitioner/Transitioner.exe`를 더블클릭하세요. Windows 10/11 x64가 대상이며 Python·Tesseract·한국어/영어 인식 데이터를 포함합니다. EXE만 따로 옮기지 마세요.
 
 실행하면 기본 브라우저에 이 PC의 변환 화면이 열립니다. 종료하려면 실행 콘솔을 닫으세요. 파일을 외부 OCR API로 보내지 않습니다.
 
@@ -79,3 +79,9 @@ Windows와 Linux에서 두 글꼴·두 크기의 1/7 관련 숫자 28건, 한글
 OCR 엔진을 셀마다 실행하지 않고 스레드별 모델을 재사용합니다. 기본 최대 2개 작업자로 순서를 유지하며 인식하고, 동일 이미지·언어·설정의 결과만 캐시합니다. 모델을 재사용하는 만큼 메모리는 더 사용할 수 있습니다. 라이브러리를 사용할 수 없으면 기존 명령행 방식으로 돌아갑니다.
 
 동일 환경에서 사용자 제공 두 문서의 전체 520셀 출력이 v0.1.2와 같았으며 처리 시간은 약 40.9→4.1초, 91.3→8.2초였습니다. 이 수치는 해당 문서와 테스트 환경 기준이며 모든 PC·문서의 속도 향상을 보장하지 않습니다. 9,000셀 일반 표는 약 34→32초로 변화가 작았습니다.
+
+## v0.1.4 — 짧은 표와 여러 페이지 확인
+
+페이지 일부만 차지하는 표도 격자를 감지하여 표 바깥의 빨간 보안 문구·머리말·꼬리말을 결과에서 제외합니다. 표 안의 빨간 데이터는 유지합니다. 디지털 PDF는 격자 없는 페이지에서도 내장 텍스트를 사용합니다. 모든 PDF 페이지를 순서대로 처리하며 완료 페이지 수를 표시하고 Excel 시트를 각각 저장합니다. 표 안에 겹쳐 인쇄된 이미지 워터마크의 완전 제거는 보장하지 않습니다.
+
+검증: 합성 3페이지 PDF의 일반/강제 OCR 경로, 앱 전체 페이지 표시 및 3개 Excel 시트 저장. 사용자 제공 PDF는 비공개로 검증하며 원본·인식 내용은 배포에 포함하지 않습니다.

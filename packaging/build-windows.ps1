@@ -28,6 +28,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Native OCR output parity failed' }
 if ($LASTEXITCODE -ne 0) { throw 'English case quality regression' }
 & $python validation/excel_screenshot.py
 if ($LASTEXITCODE -ne 0) { throw 'Excel screenshot precision regression failed' }
+& $python validation/multipage.py
+if ($LASTEXITCODE -ne 0) { throw 'Multi-page PDF regression failed' }
 & $python -m PyInstaller --noconfirm --clean --onedir --name Transitioner --manifest packaging/windows-app.manifest --python-option 'X utf8' --collect-all streamlit --collect-all altair --collect-all pydeck --collect-all pytesseract --collect-all pymupdf --hidden-import ocr --hidden-import native_ocr --add-data 'learning/english_words_500.txt;learning' --add-data 'app.py;.' --add-data 'ocr.py;.' --add-data 'build-runtime\tesseract;tesseract' launcher.py
 if ($LASTEXITCODE -ne 0) { throw 'EXE 빌드 실패' }
 # Exercise the bundled engine; a full GUI/OCR acceptance check is still required.

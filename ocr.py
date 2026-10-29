@@ -246,7 +246,10 @@ def recognize(image, lang, text_words=None, excel_precision=True):
     vertical = cv2.morphologyEx(binary, cv2.MORPH_OPEN,
                                 cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(20, h//25))))
     ys = _centers(horizontal, 1, w * .35)
-    xs = _centers(vertical, 0, h * .50)
+    # A short table may occupy only a small fraction of a PDF page. Measure
+    # vertical coverage against its horizontal rules, not the whole page.
+    table_height = ys[-1]-ys[0] if len(ys)>=2 else h
+    xs = _centers(vertical, 0, max(20, table_height * .50))
     if len(xs) >= 2 and len(ys) >= 2:
         nr, nc = len(ys)-1, len(xs)-1
         if nr * nc > 100000:
@@ -369,10 +372,29 @@ def recognize(image, lang, text_words=None, excel_precision=True):
         table.attrs['mean_confidence'] = float(np.mean(confidences)) if confidences else 0
         return table, (f"{table.attrs['text_source']} · 격자 {nr}행 × {nc}열 · 병합 {len(merges)}개 · "
                        f'불규칙 영역 {uncertain}개 (수동 검토 필요). 병합 위치를 아래에서 확인하세요.')
-    words = ocr_data(image,lang,60)
+    if text_words is not None:
+        words = pd.DataFrame(text_words)
+        # Reconstruct lines from geometry when the PDF words do not carry TSV
+        # block / line identifiers. Never OCR a digital page a second time.
+        words = words.sort_values(['top','left']).copy()
+        tolerance = max(3,float(words.height.median())*.65) if len(words) else 3
+        line, center = -1, None
+        numbers = []
+        for word in words.itertuples():
+            y = word.top+word.height/2
+            if center is None or abs(y-center)>tolerance:
+                line += 1
+                center = y
+            numbers.append(line)
+        words['block_num']=0
+        words['par_num']=0
+        words['line_num']=numbers
+    else:
+        words = ocr_data(image,lang,60)
     words = words.dropna(subset=['text'])
     words = words[words.conf >= 0]
-    words = refine_word_frame(words,gray)
+    if text_words is None:
+        words = refine_word_frame(words,gray)
     if words.empty:
         return pd.DataFrame([['']]), '텍스트를 찾지 못했습니다.'
     # Infer column anchors from large gaps between words on each recognized line.

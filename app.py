@@ -6,7 +6,7 @@ from ocr import convert, workbook, validate_merges
 
 st.set_page_config(page_title='Transitioner · OCR to Excel', layout='wide')
 st.title('이미지·PDF → 엑셀')
-st.caption('버전 0.1.3 · 로컬 OCR')
+st.caption('버전 0.1.4 · 로컬 OCR')
 st.write('로컬 OCR로 표를 읽고, 결과를 수정한 뒤 Excel 파일로 저장하세요.')
 st.caption('파일은 외부 OCR 서비스로 전송하지 않습니다. 인식 결과는 정확성을 보장하지 않으며 검토가 필요합니다.')
 available = set(pytesseract.get_languages())
@@ -19,6 +19,7 @@ uploads = st.file_uploader('이미지·PDF 여러 개 선택 (파일당 최대 1
 st.caption('지원 형식: PDF, PNG, JPEG, TIFF, BMP, WebP, GIF. HEIC·RAW 및 손상되거나 암호화된 파일은 지원하지 않습니다.')
 force_ocr = st.checkbox('PDF 내장 텍스트 대신 OCR로 강제 인식', value=False)
 excel_precision = st.checkbox('엑셀 화면의 셀 표시 자동 보정 (정밀 처리 시 느릴 수 있음)',value=True)
+st.caption('격자가 있는 표는 표 바깥의 머리말·꼬리말·보안 표시를 제외합니다. PDF는 모든 페이지를 처리하고 페이지마다 Excel 시트를 만듭니다 (최대 50페이지).')
 if uploads:
     digest = hashlib.sha256(lang.encode() + str(force_ocr).encode())
     for upload in uploads:
@@ -45,17 +46,20 @@ if uploads:
                         raise ValueError('파일당 100MB 이하로 선택하세요.')
                     with st.spinner(f'{upload.name} 분석 중…'):
                         file_results = []
+                        page_status = st.empty()
                         for page_index, (table,note) in enumerate(convert(upload.getvalue(), upload.name, lang, force_ocr, excel_precision),1):
                             if len(results)+len(file_results) >= 100:
                                 raise ValueError('일괄 처리 결과는 최대 100페이지입니다. 파일을 나눠 처리하세요.')
                             table.attrs['source_name'] = f'{upload.name}_p{page_index}'
                             file_results.append((table,note))
+                            page_status.caption(f'{upload.name}: {page_index}페이지 인식 완료')
                         results.extend(file_results)
                 except Exception as exc:
                     st.error(f'{upload.name}: {exc} (이 파일은 결과에서 제외됨)')
                 progress.progress((file_index+1)/len(uploads))
             st.session_state.results = results
     if st.session_state.get('results'):
+        st.success(f'총 {len(st.session_state.results)}페이지 인식 완료 · Excel에 페이지별 시트로 모두 저장됩니다. 아래로 스크롤하여 다음 페이지를 확인하세요.')
         edited = []
         for index, (table, note) in enumerate(st.session_state.results):
             st.subheader(table.attrs.get('source_name', f'{index+1}페이지'))
